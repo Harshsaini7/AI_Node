@@ -4,13 +4,17 @@ A simple AI Voice Agent that acts as a Customer Success Partner for a bank's loa
 
 The agent reads a spreadsheet, finds PENDING customers, calls them one by one, has a natural conversation, determines whether the customer is interested in the loan, and updates the spreadsheet accordingly.
 
-## Current Status: Phase 3 (text conversation with an LLM)
+## Current Status: Phase 4.1 (voice input with the MIC button)
 
 - [x] Phase 1 — Project setup & Excel basics (skeleton, sample data, read PENDING, colour-coded updates)
 - [x] Phase 2.1–2.3 — Processing loop, terminal Start/Stop, error handling & logging
 - [x] Phase 2.4 — Flask web UI (Start/Stop buttons, status, current customer, pending count, chat box)
 - [x] Phase 3 — LLM text conversation (Groq gpt-oss-120b, Gemini or local Ollama; structured JSON decision)
 - [ ] Phase 4 — Add Voice Pipeline
+  - [x] 4.1 Speech-to-text (MIC button, local faster-whisper)
+  - [ ] 4.2 Text-to-speech
+  - [ ] 4.3 Full voice conversation
+  - [ ] 4.4 Voice polish & edge cases
 - [ ] Phase 5 — Optional Real Phone Calling
 
 ## Setup
@@ -65,12 +69,28 @@ python main.py
 Then open **http://127.0.0.1:5000** in your browser.
 
 - **START AGENT** begins processing `PENDING` customers, top to bottom.
-- The AI speaks first. Type the customer's reply in the chat box and press SEND.
+- The AI speaks first (as text). Answer by **typing** in the chat box and pressing SEND, or by **voice** (see below).
 - **STOP AGENT** prevents any new call from starting. A call that is waiting for a reply is ended and that customer stays `PENDING`.
 - The page shows the agent status, the current customer and the number of pending customers.
 - To get fresh test data, run `python create_sample_data.py` again (not while the agent is running).
 
 The server only listens on `127.0.0.1`. It is not reachable from other machines.
+
+## Voice input (Phase 4.1)
+
+The browser records your microphone and sends the audio to the local server, which turns it into text with [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (runs on your CPU, no cloud, no API key). The text goes through the same path as a typed reply. Typing always keeps working.
+
+1. When the agent is waiting for a reply, the **MIC** button becomes active.
+2. Click **MIC** and allow microphone access when the browser asks (it asks once; `http://127.0.0.1` counts as a secure origin). Speak, then click **STOP** to send. Recording ends by itself after 30 seconds.
+3. The recognised text appears in the conversation as the customer's reply. If nothing was heard, you see a message and the question stays open, so you can try again or type.
+4. If microphone access is blocked, you get a message. Allow it in the address bar (lock icon) or type instead.
+
+Notes:
+- **First use downloads the speech model** (`base.en`, about 145 MB) from Hugging Face into `~/.cache/huggingface` (on Windows `C:\Users\<you>\.cache\huggingface`). The first voice reply is slower because of the download and model load; later ones take about a second.
+- Set `WHISPER_MODEL` in `.env` to change the model, for example `small.en` (about 485 MB, more accurate, slower). Models ending in `.en` understand English only.
+- Audio is decoded in memory and is never saved. The server log never contains the audio or the recognised text.
+- No separate ffmpeg install is needed (the `av` package bundles the decoders).
+- The upload limit for audio is 2 MB; only `audio/webm`, `audio/ogg`, `audio/mp4` and `audio/wav` are accepted, and only while the agent is waiting for a reply.
 
 ## How it works
 
@@ -86,7 +106,7 @@ The server only listens on `127.0.0.1`. It is not reachable from other machines.
 - **Language:** Python
 - **Spreadsheet:** Excel (.xlsx) via openpyxl
 - **LLM:** Groq (gpt-oss-120b), Gemini free tier or local Ollama (switchable via `LLM_PROVIDER`)
-- **Voice:** Whisper STT + Local TTS (Phase 4, not built yet)
+- **Voice:** faster-whisper STT (Phase 4.1, built) + local TTS (Phase 4.2, not built yet)
 
 ## Safety
 

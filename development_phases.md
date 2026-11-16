@@ -12,7 +12,8 @@
 | 2.1–2.3 | Done | Processing loop, Start/Stop, error handling |
 | 2.4 | Done | Flask web UI replaced the terminal UI (`python main.py`, http://127.0.0.1:5000) |
 | 3 (3.1–3.4) | Done | LLM text conversation. Provider is switchable in `.env` (`LLM_PROVIDER`): **Groq (gpt-oss-120b)**, Gemini or Ollama |
-| 4 (4.1–4.4) | Not started | Voice: speech-to-text, text-to-speech |
+| 4.1 | Done (manual browser mic test pending) | Speech-to-text: browser MIC button records, Flask `POST /api/transcribe`, local faster-whisper (`WHISPER_MODEL`, default `base.en`). Typed reply still works |
+| 4.2–4.4 | Not started | Text-to-speech, full voice conversation, voice polish |
 | 5 (5.1–5.2) | Not started | Optional real phone calls |
 
 > The phase descriptions below are the original plan. Where the build differs (for example the terminal UI in 2.2 was replaced by the web UI in 2.4, and Phase 3 now runs on Groq by default), the table above is correct.
@@ -265,7 +266,9 @@
 ## 🎙️ Phase 4 — Add Voice Pipeline
 
 ### Phase 4.1 — Speech-to-Text (Microphone Input)
-**What you'll build:**
+> **As built:** the microphone is captured in the browser (MediaRecorder), not in Python. The audio is posted to `POST /api/transcribe` and `stt_provider.transcribe(audio_bytes) -> str` converts it with faster-whisper. There is no `listen()`. Future ideas (not built): hands-free voice activity detection, streaming partial text, a larger model option in the UI.
+
+**What you'll build (original plan):**
 - Install and set up `faster-whisper` (or `whisper`)
 - Create a `stt_provider.py` module:
   - `listen()` → records from microphone → returns text

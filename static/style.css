@@ -36,6 +36,8 @@ h2 { margin: 0 0 8px; font-size: 15px; }
 .btn.start { background: #1a7f37; }
 .btn.stop { background: #cf222e; }
 .btn.send { background: #0969da; }
+.btn.mic { background: #57606a; }
+.btn.mic.recording { background: #cf222e; }
 
 .info { margin: 0 0 12px; }
 .info div { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #eaeef2; }

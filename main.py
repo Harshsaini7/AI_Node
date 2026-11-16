@@ -11,11 +11,12 @@ Then open http://127.0.0.1:5000
 Security notes:
 - The server only listens on 127.0.0.1 (never on all interfaces).
 - Requests must use a localhost Host header (blocks DNS rebinding).
-- POST requests must be JSON and, if they carry an Origin, it must be localhost
-  (blocks other websites from controlling the agent).
+- POST requests must be JSON (except /api/transcribe, which takes recorded audio) and,
+  if they carry an Origin, it must be localhost (blocks other websites from controlling the agent).
 - Error responses are generic; details go to the server log only.
 
 Phase 2.4 - Flask Web UI
+Phase 4.1 - Speech-to-Text (POST /api/transcribe)
 """
 
 from urllib.parse import urlsplit
@@ -28,6 +29,7 @@ load_dotenv()
 
 from agent import Agent  # noqa: E402
 from logger import log  # noqa: E402
+from stt_provider import SttError, transcribe  # noqa: E402
 
 # Path to the spreadsheet
 SPREADSHEET_PATH = "loan_leads.xlsx"
@@ -36,6 +38,10 @@ SPREADSHEET_PATH = "loan_leads.xlsx"
 HOST = "127.0.0.1"
 PORT = 5000
 ALLOWED_HOSTNAMES = {"127.0.0.1", "localhost"}
+
+# Recorded audio is bigger than a typed reply, so /api/transcribe has its own limit
+AUDIO_MAX_BYTES = 2 * 1024 * 1024
+AUDIO_TYPES = {"audio/webm", "audio/ogg", "audio/mp4", "audio/wav", "audio/x-wav"}
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 4 * 1024  # replies are tiny; reject big bodies
@@ -63,7 +69,13 @@ def guard_requests():
         origin = request.headers.get("Origin")
         if origin and _hostname(origin) not in ALLOWED_HOSTNAMES:
             return jsonify({"error": "Forbidden"}), 403
-        if not request.is_json:
+        if request.path == "/api/transcribe":
+            request.max_content_length = AUDIO_MAX_BYTES  # this route only
+            if request.mimetype not in AUDIO_TYPES:
+                return jsonify({"error": "Audio body required"}), 415
+            if request.content_length and request.content_length > AUDIO_MAX_BYTES:
+                return jsonify({"error": "Request too large"}), 413
+        elif not request.is_json:
             return jsonify({"error": "JSON body required"}), 415
 
     return None
@@ -139,6 +151,34 @@ def api_reply():
     if not ok:
         return jsonify({"error": error}), 400
     return jsonify({"ok": True})
+
+
+@app.post("/api/transcribe")
+def api_transcribe():
+    """Turn recorded audio into text and give it to the agent as the customer's reply."""
+    # Cheap check first so we do not spend CPU on audio nobody is waiting for.
+    # submit_reply() checks again, so a reply that arrives meanwhile is still handled safely.
+    if not agent.awaiting_reply:
+        return jsonify({"error": "The agent is not waiting for a reply right now."}), 409
+
+    audio = request.get_data()  # raises 413 if it exceeds AUDIO_MAX_BYTES
+    if not audio:
+        return jsonify({"error": "No audio received."}), 400
+
+    try:
+        text = transcribe(audio)
+    except SttError:  # details were already logged
+        return jsonify({"error": "Could not process the audio. Please try again or type."}), 422
+
+    if not text:
+        # Silence or noise: nothing is submitted, the question stays open
+        return jsonify({"text": ""})
+
+    ok, error = agent.submit_reply(text)
+    if not ok:
+        return jsonify({"error": error}), 409
+    log.info(f"Voice reply accepted ({len(text)} characters).")  # never log the content
+    return jsonify({"text": text})
 
 
 if __name__ == "__main__":

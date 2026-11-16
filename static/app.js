@@ -13,10 +13,18 @@ const els = {
   form: document.getElementById("reply-form"),
   input: document.getElementById("reply-input"),
   send: document.getElementById("reply-btn"),
+  mic: document.getElementById("mic-btn"),
   summary: document.getElementById("summary"),
 };
 
+const AUDIO_TYPES = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/webm", "audio/mp4"];
+const MAX_RECORD_MS = 30000; // keeps the upload far below the server's 2 MB limit
+
 let lastTranscriptKey = "";
+let recorder = null; // active MediaRecorder, or null
+let recordTimer = null;
+let transcribing = false;
+let lastServerMessage = null;
 
 function showMessage(text) {
   els.message.textContent = text || "";
@@ -71,12 +79,19 @@ function render(state) {
   els.status.className = "badge " + state.status.toLowerCase().replace(/[^a-z]/g, "");
   els.customer.textContent = state.current_customer || "-";
   els.pending.textContent = state.pending_count === null ? "-" : String(state.pending_count);
-  showMessage(state.message);
+  if (state.message !== lastServerMessage) { // do not wipe local messages (e.g. mic errors) on every poll
+    lastServerMessage = state.message;
+    showMessage(state.message);
+  }
 
   els.start.disabled = state.is_running;
   els.stop.disabled = !state.is_running || state.status === "STOPPING";
   els.input.disabled = !state.awaiting_reply;
   els.send.disabled = !state.awaiting_reply;
+  if (!state.awaiting_reply && recorder) {
+    stopRecording(false); // the question is gone (Stop pressed or timeout): drop the audio
+  }
+  updateMic(state.awaiting_reply);
   if (state.awaiting_reply && document.activeElement !== els.input) {
     els.input.focus();
   }
@@ -88,6 +103,96 @@ function render(state) {
     "Interested: " + s.interested + "  |  Not interested: " + s.not_interested +
     "  |  Skipped: " + s.skipped + "  |  Needs retry: " + s.errors;
 }
+
+function updateMic(awaiting) {
+  const supported = Boolean(navigator.mediaDevices && window.MediaRecorder);
+  els.mic.disabled = !supported || transcribing || !(awaiting || recorder);
+  els.mic.classList.toggle("recording", Boolean(recorder));
+  els.mic.textContent = recorder ? "STOP" : transcribing ? "..." : "MIC";
+  if (!supported) {
+    els.mic.title = "Voice input is not supported in this browser. Please type.";
+  }
+}
+
+function stopRecording(send) {
+  if (!recorder) {
+    return;
+  }
+  recorder.sendAfterStop = send;
+  clearTimeout(recordTimer);
+  recorder.stop(); // the "stop" handler does the rest
+}
+
+async function startRecording() {
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (_error) {
+    showMessage("Microphone access was blocked. Allow it in the browser's address bar, or type the reply.");
+    return;
+  }
+
+  const mimeType = AUDIO_TYPES.find((type) => MediaRecorder.isTypeSupported(type));
+  const chunks = [];
+  const rec = mimeType ? new MediaRecorder(stream, { mimeType: mimeType }) : new MediaRecorder(stream);
+  rec.sendAfterStop = false;
+  rec.addEventListener("dataavailable", (event) => {
+    if (event.data.size > 0) {
+      chunks.push(event.data);
+    }
+  });
+  rec.addEventListener("stop", async () => {
+    stream.getTracks().forEach((track) => track.stop()); // release the microphone
+    recorder = null;
+    if (!rec.sendAfterStop || chunks.length === 0) {
+      updateMic(false);
+      return;
+    }
+    await sendAudio(new Blob(chunks, { type: rec.mimeType || mimeType || "audio/webm" }));
+  });
+
+  recorder = rec;
+  showMessage("");
+  rec.start();
+  recordTimer = setTimeout(() => stopRecording(true), MAX_RECORD_MS);
+  updateMic(true);
+}
+
+async function sendAudio(blob) {
+  transcribing = true;
+  updateMic(true);
+  showMessage("Transcribing...");
+  try {
+    const response = await fetch("/api/transcribe", {
+      method: "POST",
+      headers: { "Content-Type": blob.type },
+      body: blob,
+    });
+    let data = {};
+    try {
+      data = await response.json();
+    } catch (_ignored) {
+      /* keep empty data */
+    }
+    if (!response.ok) {
+      throw new Error(data.error || "Could not process the audio.");
+    }
+    showMessage(data.text ? "" : "I could not hear any speech. Please try again or type the reply.");
+  } catch (error) {
+    showMessage(error.message);
+  } finally {
+    transcribing = false;
+    refresh();
+  }
+}
+
+els.mic.addEventListener("click", () => {
+  if (recorder) {
+    stopRecording(true);
+  } else if (!transcribing) {
+    startRecording();
+  }
+});
 
 async function refresh() {
   try {
