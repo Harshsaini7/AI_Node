@@ -5,7 +5,7 @@ openpyxl==3.1.5
 python-dotenv==1.2.2
 
 # Phase 3 - Gemini LLM
-google-genai
+google-genai==3.3.0
 
 # Phase 2.4 - Web UI
 flask==3.1.3

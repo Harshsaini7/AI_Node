@@ -4,6 +4,21 @@
 
 ---
 
+## ✅ Current Status
+
+| Phase | Status | Notes |
+|-------|--------|-------|
+| 1 (1.1–1.4) | Done | Excel basics, colour coding |
+| 2.1–2.3 | Done | Processing loop, Start/Stop, error handling |
+| 2.4 | Done | Flask web UI replaced the terminal UI (`python main.py`, http://127.0.0.1:5000) |
+| 3 (3.1–3.4) | Done | LLM text conversation. Provider is switchable in `.env` (`LLM_PROVIDER`): **Groq (gpt-oss-120b)**, Gemini or Ollama |
+| 4 (4.1–4.4) | Not started | Voice: speech-to-text, text-to-speech |
+| 5 (5.1–5.2) | Not started | Optional real phone calls |
+
+> The phase descriptions below are the original plan. Where the build differs (for example the terminal UI in 2.2 was replaced by the web UI in 2.4, and Phase 3 now runs on Groq by default), the table above is correct.
+
+---
+
 ## 🏗️ Phase 1 — Project Setup & Excel Basics
 
 ### Phase 1.1 — Project Skeleton
@@ -159,7 +174,7 @@
 
 ---
 
-## 🤖 Phase 3 — Add Gemini LLM
+## 🤖 Phase 3 — Add LLM (Gemini originally; now Groq / Gemini / Ollama)
 
 ### Phase 3.1 — Gemini API Integration (Hello World)
 **What you'll build:**
@@ -405,7 +420,7 @@
 |-------|------|
 | Phase 1 (1.1–1.4) | ₹0 |
 | Phase 2 (2.1–2.4) | ₹0 |
-| Phase 3 (3.1–3.4) | ₹0 (Gemini Free Tier) |
+| Phase 3 (3.1–3.4) | ₹0 with Ollama (local) or the Gemini free tier. Groq has its own free-tier limits, check https://console.groq.com |
 | Phase 4 (4.1–4.4) | ₹0 (local Whisper + local TTS) |
 | Phase 5 (5.1–5.2) | 💸 Paid (Twilio/Vapi credits) |
 
