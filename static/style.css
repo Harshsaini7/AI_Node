@@ -66,6 +66,7 @@ h2 { margin: 0 0 8px; font-size: 15px; }
 .transcript .system { background: transparent; color: #57606a; font-style: italic; text-align: center; }
 .transcript .empty { color: #57606a; text-align: center; background: transparent; }
 
+.speak { display: block; font-size: 13px; color: #57606a; margin-bottom: 6px; }
 .reply { display: flex; gap: 8px; margin-top: 10px; }
 .reply input { flex: 1; padding: 9px 10px; font-size: 14px; border: 1px solid #d0d7de; border-radius: 6px; }
 

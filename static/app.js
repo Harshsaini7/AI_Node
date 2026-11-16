@@ -14,6 +14,7 @@ const els = {
   input: document.getElementById("reply-input"),
   send: document.getElementById("reply-btn"),
   mic: document.getElementById("mic-btn"),
+  speak: document.getElementById("speak-toggle"),
   summary: document.getElementById("summary"),
 };
 
@@ -25,6 +26,52 @@ let recorder = null; // active MediaRecorder, or null
 let recordTimer = null;
 let transcribing = false;
 let lastServerMessage = null;
+let seenLines = null; // number of transcript lines already handled (null until the first poll)
+let startEpoch = 0; // bumped on START so stale in-flight status polls are ignored
+
+const TTS_LANG = "en-IN";
+const ttsSupported = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+if (!ttsSupported) {
+  els.speak.disabled = true;
+  els.speak.checked = false;
+  els.speak.parentElement.title = "Spoken replies are not supported in this browser.";
+}
+
+function speak(text) {
+  if (!ttsSupported || !els.speak.checked) {
+    return;
+  }
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = TTS_LANG;
+  window.speechSynthesis.speak(utterance); // queued: lines are spoken in order
+}
+
+function stopSpeaking() {
+  if (ttsSupported) {
+    window.speechSynthesis.cancel();
+  }
+}
+
+// Speak only the agent lines that are new since the last poll.
+function speakNewLines(lines) {
+  if (seenLines === null) {
+    seenLines = lines.length; // first poll: do not read old history aloud
+  } else if (lines.length < seenLines) {
+    seenLines = 0; // a new run reset the transcript
+  }
+  for (const line of lines.slice(seenLines)) {
+    if (line.role === "agent") {
+      speak(line.text);
+    }
+  }
+  seenLines = lines.length;
+}
+
+els.speak.addEventListener("change", () => {
+  if (!els.speak.checked) {
+    stopSpeaking();
+  }
+});
 
 function showMessage(text) {
   els.message.textContent = text || "";
@@ -97,6 +144,10 @@ function render(state) {
   }
 
   renderTranscript(state.transcript);
+  if (!state.is_running) {
+    stopSpeaking(); // a stopped or finished run must not keep talking
+  }
+  speakNewLines(state.transcript);
 
   const s = state.summary;
   els.summary.textContent =
@@ -195,12 +246,16 @@ els.mic.addEventListener("click", () => {
 });
 
 async function refresh() {
+  const epoch = startEpoch;
   try {
     const response = await fetch("/api/status");
     if (!response.ok) {
       throw new Error("status failed");
     }
-    render(await response.json());
+    const state = await response.json();
+    if (epoch === startEpoch) { // ignore a poll that began before START was clicked
+      render(state);
+    }
   } catch (_error) {
     showMessage("Cannot reach the server. Is it still running?");
   }
@@ -210,6 +265,8 @@ els.start.addEventListener("click", async () => {
   els.start.disabled = true;
   try {
     await post("/api/start");
+    startEpoch += 1; // drop polls that started before the server reset its transcript
+    seenLines = 0; // speak the new run from its first line
     showMessage("");
   } catch (error) {
     showMessage(error.message);

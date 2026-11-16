@@ -4,7 +4,7 @@ A simple AI Voice Agent that acts as a Customer Success Partner for a bank's loa
 
 The agent reads a spreadsheet, finds PENDING customers, calls them one by one, has a natural conversation, determines whether the customer is interested in the loan, and updates the spreadsheet accordingly.
 
-## Current Status: Phase 4.1 (voice input with the MIC button)
+## Current Status: Phase 4.2 (the agent speaks its replies)
 
 - [x] Phase 1 — Project setup & Excel basics (skeleton, sample data, read PENDING, colour-coded updates)
 - [x] Phase 2.1–2.3 — Processing loop, terminal Start/Stop, error handling & logging
@@ -12,7 +12,7 @@ The agent reads a spreadsheet, finds PENDING customers, calls them one by one, h
 - [x] Phase 3 — LLM text conversation (Groq gpt-oss-120b, Gemini or local Ollama; structured JSON decision)
 - [ ] Phase 4 — Add Voice Pipeline
   - [x] 4.1 Speech-to-text (MIC button, local faster-whisper)
-  - [ ] 4.2 Text-to-speech
+  - [x] 4.2 Text-to-speech (browser speechSynthesis)
   - [ ] 4.3 Full voice conversation
   - [ ] 4.4 Voice polish & edge cases
 - [ ] Phase 5 — Optional Real Phone Calling
@@ -69,7 +69,7 @@ python main.py
 Then open **http://127.0.0.1:5000** in your browser.
 
 - **START AGENT** begins processing `PENDING` customers, top to bottom.
-- The AI speaks first (as text). Answer by **typing** in the chat box and pressing SEND, or by **voice** (see below).
+- The AI speaks first, in text and out loud. Answer by **typing** in the chat box and pressing SEND, or by **voice** (see below).
 - **STOP AGENT** prevents any new call from starting. A call that is waiting for a reply is ended and that customer stays `PENDING`.
 - The page shows the agent status, the current customer and the number of pending customers.
 - To get fresh test data, run `python create_sample_data.py` again (not while the agent is running).
@@ -92,6 +92,17 @@ Notes:
 - No separate ffmpeg install is needed (the `av` package bundles the decoders).
 - The upload limit for audio is 2 MB; only `audio/webm`, `audio/ogg`, `audio/mp4` and `audio/wav` are accepted, and only while the agent is waiting for a reply.
 
+## Voice output (Phase 4.2)
+
+The browser reads each new agent line aloud with the built-in `speechSynthesis` API. It runs on your computer: no cloud service, no API key, no extra Python package, and no audio passes through the server.
+
+- Use the **Speak the agent's replies aloud** checkbox above the chat to mute or unmute. Unchecking it cuts off any speech in progress.
+- Pressing **STOP AGENT**, or the run finishing, stops the speech.
+- Old conversation lines are never read aloud when you open or reload the page; only lines that appear during a run are spoken.
+- The voice and its quality depend on your browser and operating system (Edge on Windows has good built-in voices). The language is set to English (India) and falls back to the system default if that voice is missing.
+- If the browser has no speech support, the checkbox is disabled and the text conversation still works.
+- Use headphones: with speakers, the microphone can pick up the agent's voice. Keeping the mic closed while the agent speaks comes in Phase 4.3.
+
 ## How it works
 
 - Greeting is fixed text (0 LLM calls).
@@ -106,7 +117,7 @@ Notes:
 - **Language:** Python
 - **Spreadsheet:** Excel (.xlsx) via openpyxl
 - **LLM:** Groq (gpt-oss-120b), Gemini free tier or local Ollama (switchable via `LLM_PROVIDER`)
-- **Voice:** faster-whisper STT (Phase 4.1, built) + local TTS (Phase 4.2, not built yet)
+- **Voice:** faster-whisper STT (Phase 4.1) + browser `speechSynthesis` TTS (Phase 4.2)
 
 ## Safety
 
