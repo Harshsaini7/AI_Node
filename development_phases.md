@@ -12,9 +12,10 @@
 | 2.1–2.3 | Done | Processing loop, Start/Stop, error handling |
 | 2.4 | Done | Flask web UI replaced the terminal UI (`python main.py`, http://127.0.0.1:5000) |
 | 3 (3.1–3.4) | Done | LLM text conversation. Provider is switchable in `.env` (`LLM_PROVIDER`): **Groq (gpt-oss-120b)**, Gemini or Ollama |
-| 4.1 | Done (manual browser mic test pending) | Speech-to-text: browser MIC button records, Flask `POST /api/transcribe`, local faster-whisper (`WHISPER_MODEL`, default `base.en`). Typed reply still works |
-| 4.2 | Done (manual browser test pending) | Text-to-speech: the browser reads agent lines aloud with `speechSynthesis` (no server code or new dependency); mute checkbox on the page |
-| 4.3–4.4 | Not started | Full voice conversation, voice polish |
+| 4.1 | Done (verified in browser) | Speech-to-text: browser MIC button records, Flask `POST /api/transcribe`, local faster-whisper (`WHISPER_MODEL`, default `base.en`). Typed reply still works |
+| 4.2 | Done (verified in browser) | Text-to-speech: the browser reads agent lines aloud with `speechSynthesis` (no server code or new dependency); mute checkbox on the page |
+| 4.3 | Done (verified in browser) | Full voice loop in the browser: optional hands-free checkbox. Agent speaks, mic opens when it finishes, silence (1.5 s) sends the reply. MIC stays disabled while the agent speaks |
+| 4.4 | Not started | Voice polish and edge cases |
 | 5 (5.1–5.2) | Not started | Optional real phone calls |
 
 > The phase descriptions below are the original plan. Where the build differs (for example the terminal UI in 2.2 was replaced by the web UI in 2.4, and Phase 3 now runs on Groq by default), the table above is correct.

@@ -4,7 +4,7 @@ A simple AI Voice Agent that acts as a Customer Success Partner for a bank's loa
 
 The agent reads a spreadsheet, finds PENDING customers, calls them one by one, has a natural conversation, determines whether the customer is interested in the loan, and updates the spreadsheet accordingly.
 
-## Current Status: Phase 4.2 (the agent speaks its replies)
+## Current Status: Phase 4.3 (hands-free voice conversation)
 
 - [x] Phase 1 — Project setup & Excel basics (skeleton, sample data, read PENDING, colour-coded updates)
 - [x] Phase 2.1–2.3 — Processing loop, terminal Start/Stop, error handling & logging
@@ -13,7 +13,7 @@ The agent reads a spreadsheet, finds PENDING customers, calls them one by one, h
 - [ ] Phase 4 — Add Voice Pipeline
   - [x] 4.1 Speech-to-text (MIC button, local faster-whisper)
   - [x] 4.2 Text-to-speech (browser speechSynthesis)
-  - [ ] 4.3 Full voice conversation
+  - [x] 4.3 Full voice conversation (hands-free option, mic closed while the agent speaks)
   - [ ] 4.4 Voice polish & edge cases
 - [ ] Phase 5 — Optional Real Phone Calling
 
@@ -101,7 +101,22 @@ The browser reads each new agent line aloud with the built-in `speechSynthesis` 
 - Old conversation lines are never read aloud when you open or reload the page; only lines that appear during a run are spoken.
 - The voice and its quality depend on your browser and operating system (Edge on Windows has good built-in voices). The language is set to English (India) and falls back to the system default if that voice is missing.
 - If the browser has no speech support, the checkbox is disabled and the text conversation still works.
-- Use headphones: with speakers, the microphone can pick up the agent's voice. Keeping the mic closed while the agent speaks comes in Phase 4.3.
+- The microphone never opens while the agent is speaking (the MIC button is disabled until the speech ends), so it cannot record the agent's own voice.
+
+## Hands-free voice conversation (Phase 4.3)
+
+Tick **Hands-free: listen automatically after the agent speaks** (off by default) and the whole call runs by voice:
+
+1. The agent speaks. The mic stays closed.
+2. When the agent finishes, the mic opens by itself (the MIC button turns red).
+3. You speak. After about 1.5 seconds of silence the recording is sent, transcribed, and answered, and the loop repeats until the customer is classified.
+4. If you say nothing for 10 seconds, it stops listening and shows a message. Click **MIC** or type to continue; it listens again on the next question.
+
+Notes:
+- The browser asks for microphone permission the first time. If you block it, hands-free does not retry in a loop; type instead.
+- Use headphones. With speakers the mic can still hear room echo right after the agent stops.
+- The silence settings are the `VAD` constants at the top of [`static/app.js`](static/app.js). In a noisy room, raise `threshold`.
+- MIC, typing, STOP AGENT and the mute checkbox all keep working in hands-free mode.
 
 ## How it works
 
@@ -117,7 +132,7 @@ The browser reads each new agent line aloud with the built-in `speechSynthesis` 
 - **Language:** Python
 - **Spreadsheet:** Excel (.xlsx) via openpyxl
 - **LLM:** Groq (gpt-oss-120b), Gemini free tier or local Ollama (switchable via `LLM_PROVIDER`)
-- **Voice:** faster-whisper STT (Phase 4.1) + browser `speechSynthesis` TTS (Phase 4.2)
+- **Voice:** faster-whisper STT (Phase 4.1) + browser `speechSynthesis` TTS (Phase 4.2) + hands-free loop (Phase 4.3)
 
 ## Safety
 
