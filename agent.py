@@ -7,17 +7,20 @@ Handles:
 - Agent state (IDLE, RUNNING, CALLING, STOPPING, STOPPED, COMPLETED, ERROR)
 - Start/Stop controls
 - Sequential processing of PENDING customers
+- Gemini LLM conversation for interest classification
 - Thread-safe stop mechanism
 - Error handling: technical failures never falsely classify customers
 
-Phase 2.3 - Error Handling & Safe Failures
+Phase 3.3/3.4 - Gemini LLM with Text Conversation
 """
 
+import json
 import time
-import random
 import threading
 
 from logger import log
+from llm_provider import get_llm_provider, LLMFatalError
+from prompts import TURN_SYSTEM_PROMPT, get_fixed_greeting, get_turn_prompt
 from spreadsheet_manager import (
     load_spreadsheet,
     validate_spreadsheet,
@@ -66,6 +69,10 @@ class Agent:
             "errors": 0,
         }
 
+        # LLM Provider
+        self._llm = None
+        self._llm_fatal_error = None  # Set when the LLM cannot work at all (bad key, daily quota)
+
         # Threading
         self._thread = None
         self._stop_event = threading.Event()  # Thread-safe stop signal
@@ -89,6 +96,7 @@ class Agent:
 
         # Reset state
         self._stop_event.clear()
+        self._llm_fatal_error = None
         self.summary = {
             "total_processed": 0,
             "interested": 0,
@@ -126,7 +134,16 @@ class Agent:
         self.status = STATE_RUNNING
 
         try:
-            # Step 1: Load spreadsheet
+            # Step 1: Initialize LLM (provider chosen by LLM_PROVIDER in .env)
+            log.info("Initializing LLM provider...")
+            try:
+                self._llm = get_llm_provider()
+            except ValueError as e:
+                log.error(f"LLM initialization failed: {e}")
+                self.status = STATE_ERROR
+                return
+
+            # Step 2: Load spreadsheet
             log.info("Loading spreadsheet...")
             workbook = self._load_and_validate()
             if workbook is None:
@@ -142,12 +159,17 @@ class Agent:
 
             log.info(f"Found {len(pending)} PENDING customers to process.")
 
-            # Step 3: Process each customer
+            # Step 4: Process each customer
             for i, customer in enumerate(pending, 1):
                 # Check if stop was requested BEFORE starting a new call
                 if self._stop_event.is_set():
-                    log.info("Stop requested. Not starting new calls.")
-                    self.status = STATE_STOPPED
+                    if self._llm_fatal_error:
+                        log.error(f"Stopped: {self._llm_fatal_error}. "
+                                  "Remaining customers stay PENDING.")
+                        self.status = STATE_ERROR
+                    else:
+                        log.info("Stop requested. Not starting new calls.")
+                        self.status = STATE_STOPPED
                     self._print_summary()
                     return
 
@@ -156,7 +178,12 @@ class Agent:
 
             # All done
             self.current_customer = None
-            self.status = STATE_COMPLETED
+            if self._llm_fatal_error:
+                log.error(f"Stopped: {self._llm_fatal_error}. "
+                          "Remaining customers stay PENDING.")
+                self.status = STATE_ERROR
+            else:
+                self.status = STATE_COMPLETED
             self._print_summary()
 
         except Exception as e:
@@ -231,13 +258,12 @@ class Agent:
         log.info(f"  Status: CALLING...")
 
         try:
-            # Simulate the call (replaced with real AI in later phases)
-            time.sleep(3)
-            result = self._simulate_call(customer)
+            # Have a text conversation with the AI acting as bank agent
+            result = self._conduct_conversation(customer)
 
             # Validate the result before updating spreadsheet
             if result not in ("INTERESTED", "NOT_INTERESTED"):
-                log.warning(f"  Unexpected result '{result}' for {name}. Keeping PENDING.")
+                log.warning(f"  Result '{result}' for {name}. Keeping PENDING.")
                 self.summary["errors"] += 1
                 return
 
@@ -257,6 +283,12 @@ class Agent:
 
             log.info(f"  Spreadsheet updated.")
 
+        except LLMFatalError as e:
+            # LLM unusable (bad key / daily quota gone): customer stays PENDING, stop the run
+            log.error(f"  LLM unavailable: {e}. '{name}' remains PENDING.")
+            self._llm_fatal_error = f"LLM unavailable ({e})"
+            self._stop_event.set()
+
         except Exception as e:
             # SAFETY: On ANY error, customer stays PENDING
             log.error(f"  Error processing {name}: {e}")
@@ -266,17 +298,104 @@ class Agent:
         finally:
             self.status = STATE_RUNNING
 
-    def _simulate_call(self, customer):
+    def _conduct_conversation(self, customer):
         """
-        Simulate a call result. Will be replaced with real AI later.
+        Conduct a text-based conversation with the AI as the bank agent.
+        The user types as the customer in the terminal.
+
+        The conversation continues until the AI can determine interest.
+        Maximum 10 turns to prevent infinite loops.
 
         Args:
-            customer (dict): Customer info
+            customer (dict): Customer info (name, phone, row_number)
 
         Returns:
-            str: 'INTERESTED' or 'NOT_INTERESTED'
+            str: 'INTERESTED', 'NOT_INTERESTED', or 'UNCLEAR'
         """
-        return random.choice(["INTERESTED", "NOT_INTERESTED"])
+        name = customer["name"]
+        max_turns = 10
+
+        # Conversation history for context
+        conversation_history = []
+
+        # Step 1: Fixed opening greeting (no LLM call, saves API quota)
+        ai_greeting = get_fixed_greeting(name)
+        print(f"\n  AI Agent: {ai_greeting}")
+        conversation_history.append(f"AI: {ai_greeting}")
+
+        # Step 2: Multi-turn conversation
+        for turn in range(max_turns):
+            # Get customer response from terminal
+            try:
+                customer_input = input(f"  You ({name}): ").strip()
+            except EOFError:
+                log.warning("Input ended. Classifying as UNCLEAR.")
+                return "UNCLEAR"
+
+            if not customer_input:
+                print("  (Please type a response)")
+                continue
+
+            conversation_history.append(f"Customer: {customer_input}")
+
+            # ONE LLM call returns both the reply and the classification
+            raw_response = self._llm.chat(
+                message=get_turn_prompt(conversation_history),
+                system_instruction=TURN_SYSTEM_PROMPT,
+                json_mode=True,
+            )
+            reply, result = self._parse_turn(raw_response)
+
+            if reply is None:
+                # Invalid AI response: show a safe generic line, keep the conversation going
+                reply = "Sorry, could you please repeat that?"
+            print(f"  AI Agent: {reply}")
+            conversation_history.append(f"AI: {reply}")
+
+            if result in ("INTERESTED", "NOT_INTERESTED"):
+                return result
+
+        # Max turns reached — couldn't determine
+        log.warning(f"  Max conversation turns reached for {name}. Classifying as UNCLEAR.")
+        return "UNCLEAR"
+
+    def _parse_turn(self, raw_response):
+        """
+        Parse and validate the AI's JSON response for one turn.
+
+        Expected format: {"reply": "...", "status": "INTERESTED"}
+        The Python app validates this — the LLM never touches the spreadsheet.
+
+        Args:
+            raw_response (str): Raw text from the AI
+
+        Returns:
+            tuple: (reply or None, status) where status is
+                   'INTERESTED', 'NOT_INTERESTED', or 'UNCLEAR'.
+                   Any invalid response gives (None, 'UNCLEAR').
+        """
+        try:
+            # Clean the response (remove markdown code blocks if present)
+            cleaned = raw_response.strip()
+            if cleaned.startswith("```"):
+                # Remove ```json ... ``` wrapping
+                lines = cleaned.split("\n")
+                cleaned = "\n".join(lines[1:-1])
+
+            data = json.loads(cleaned)
+
+            reply = str(data.get("reply", "")).strip() or None
+            status = str(data.get("status", "")).strip().upper()
+
+            if status not in ("INTERESTED", "NOT_INTERESTED", "UNCLEAR"):
+                log.warning(f"  Unknown classification: '{status}'")
+                return reply, "UNCLEAR"
+
+            return reply, status
+
+        except (json.JSONDecodeError, AttributeError):
+            log.warning(f"  Could not parse AI response as JSON: {raw_response[:100]}")
+            return None, "UNCLEAR"
 
     def _print_summary(self):
         """Print the processing summary."""

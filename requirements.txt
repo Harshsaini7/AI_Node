@@ -3,3 +3,6 @@ openpyxl==3.1.5
 
 # Environment variable management
 python-dotenv==1.1.0
+
+# Phase 3 - Gemini LLM
+google-genai
