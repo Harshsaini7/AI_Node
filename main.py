@@ -1,117 +1,147 @@
 """
-AI Loan Customer Agent
-======================
-A simple AI Voice Agent that acts as a Customer Success Partner
-for a bank's loan-program outreach.
+AI Loan Customer Agent - Web UI
+===============================
+A simple Flask page with START / STOP buttons, the agent status,
+the current customer and a chat box for the customer's reply.
 
-The agent reads a spreadsheet, finds PENDING customers,
-processes them one by one, determines loan interest, and
-updates the spreadsheet accordingly.
+Run:
+    python main.py
+Then open http://127.0.0.1:5000
 
-Commands:
-    start  - Start processing PENDING customers
-    stop   - Stop after current customer finishes
-    status - Show current agent status
-    reset  - Regenerate fresh test data
-    quit   - Exit the application
+Security notes:
+- The server only listens on 127.0.0.1 (never on all interfaces).
+- Requests must use a localhost Host header (blocks DNS rebinding).
+- POST requests must be JSON and, if they carry an Origin, it must be localhost
+  (blocks other websites from controlling the agent).
+- Error responses are generic; details go to the server log only.
 
-Phase 2.2 - Terminal Start/Stop with Threading
+Phase 2.4 - Flask Web UI
 """
 
-import time
+from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
-from agent import Agent
+from flask import Flask, jsonify, render_template, request
 
-# Load environment variables from .env file
+# Load environment variables from .env file (before importing modules that read them)
 load_dotenv()
+
+from agent import Agent  # noqa: E402
+from logger import log  # noqa: E402
 
 # Path to the spreadsheet
 SPREADSHEET_PATH = "loan_leads.xlsx"
 
+# Server binding: localhost only
+HOST = "127.0.0.1"
+PORT = 5000
+ALLOWED_HOSTNAMES = {"127.0.0.1", "localhost"}
 
-def print_banner():
-    """Print the application banner."""
-    print()
-    print("=" * 50)
-    print("   AI LOAN CUSTOMER AGENT")
-    print("=" * 50)
-    print()
-    print("Commands:")
-    print("  start  - Start processing customers")
-    print("  stop   - Stop the agent gracefully")
-    print("  status - Show current agent status")
-    print("  reset  - Regenerate fresh test data")
-    print("  quit   - Exit the application")
-    print()
+app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 4 * 1024  # replies are tiny; reject big bodies
+
+agent = Agent(SPREADSHEET_PATH)
 
 
-def handle_reset():
-    """Regenerate fresh test data."""
-    from create_sample_data import create_sample_spreadsheet
-    create_sample_spreadsheet(SPREADSHEET_PATH)
+def _hostname(value):
+    """Hostname part of a Host header or Origin URL, or None if it cannot be parsed."""
+    try:
+        if "//" not in value:
+            value = "//" + value
+        return urlsplit(value).hostname
+    except ValueError:
+        return None
 
 
-def main():
-    """Entry point - interactive terminal loop."""
-    print_banner()
+@app.before_request
+def guard_requests():
+    """Reject requests that did not come from this machine's own pages."""
+    if _hostname(request.host) not in ALLOWED_HOSTNAMES:
+        return jsonify({"error": "Forbidden"}), 403
 
-    agent = Agent(SPREADSHEET_PATH)
+    if request.method == "POST":
+        origin = request.headers.get("Origin")
+        if origin and _hostname(origin) not in ALLOWED_HOSTNAMES:
+            return jsonify({"error": "Forbidden"}), 403
+        if not request.is_json:
+            return jsonify({"error": "JSON body required"}), 415
 
-    while True:
-        try:
-            # Show prompt with current status
-            prompt = f"[{agent.status}]> "
-            command = input(prompt).strip().lower()
+    return None
 
-            if command == "start":
-                agent.start()
-                # Give the thread a moment to start and print its first output
-                time.sleep(0.5)
 
-            elif command == "stop":
-                agent.stop()
+@app.after_request
+def add_security_headers(response):
+    """Basic hardening headers for every response."""
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+    )
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
-            elif command == "status":
-                print(f"  Agent Status:     {agent.status}")
-                if agent.current_customer:
-                    print(f"  Current Customer: {agent.current_customer}")
-                else:
-                    print(f"  Current Customer: -")
-                print(f"  Processed:        {agent.summary['total_processed']}")
-                print(f"  Interested:       {agent.summary['interested']}")
-                print(f"  Not Interested:   {agent.summary['not_interested']}")
 
-            elif command == "reset":
-                if agent.is_running:
-                    print("Cannot reset while agent is running. Stop it first.")
-                else:
-                    handle_reset()
-                    agent = Agent(SPREADSHEET_PATH)
-                    print("Agent reset. Ready to start.")
+@app.errorhandler(404)
+def not_found(_error):
+    return jsonify({"error": "Not found"}), 404
 
-            elif command == "quit" or command == "exit":
-                if agent.is_running:
-                    print("Stopping agent first...")
-                    agent.stop()
-                    time.sleep(1)
-                print("Goodbye!")
-                break
 
-            elif command == "":
-                continue
+@app.errorhandler(405)
+def method_not_allowed(_error):
+    return jsonify({"error": "Method not allowed"}), 405
 
-            else:
-                print(f"Unknown command: '{command}'")
-                print("Commands: start, stop, status, reset, quit")
 
-        except KeyboardInterrupt:
-            print("\nInterrupted! Shutting down...")
-            if agent.is_running:
-                agent.stop()
-                time.sleep(1)
-            break
+@app.errorhandler(413)
+def too_large(_error):
+    return jsonify({"error": "Request too large"}), 413
+
+
+@app.errorhandler(Exception)
+def unexpected_error(error):
+    """Never leak internals to the browser; log them server-side."""
+    code = getattr(error, "code", None)
+    if isinstance(code, int) and code < 500:
+        return jsonify({"error": "Bad request"}), code
+    log.error(f"Unhandled error: {error}", exc_info=True)
+    return jsonify({"error": "Internal error"}), 500
+
+
+@app.get("/")
+def index():
+    return render_template("index.html", spreadsheet=SPREADSHEET_PATH)
+
+
+@app.get("/api/status")
+def api_status():
+    return jsonify(agent.get_status())
+
+
+@app.post("/api/start")
+def api_start():
+    if not agent.start():
+        return jsonify({"error": "The agent is already running."}), 409
+    return jsonify({"ok": True})
+
+
+@app.post("/api/stop")
+def api_stop():
+    if not agent.stop():
+        return jsonify({"error": "The agent is not running."}), 409
+    return jsonify({"ok": True})
+
+
+@app.post("/api/reply")
+def api_reply():
+    data = request.get_json(silent=True)
+    text = data.get("text") if isinstance(data, dict) else None
+    ok, error = agent.submit_reply(text)
+    if not ok:
+        return jsonify({"error": error}), 400
+    return jsonify({"ok": True})
 
 
 if __name__ == "__main__":
-    main()
+    log.info(f"Open http://{HOST}:{PORT} in your browser. Press Ctrl+C to quit.")
+    # debug=False: the Werkzeug debugger allows code execution and must never be on
+    app.run(host=HOST, port=PORT, debug=False)

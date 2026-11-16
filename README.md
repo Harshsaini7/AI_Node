@@ -8,7 +8,7 @@ The agent reads a spreadsheet, finds PENDING customers, calls them one by one, h
 
 - [x] Phase 1 — Project setup & Excel basics (skeleton, sample data, read PENDING, colour-coded updates)
 - [x] Phase 2.1–2.3 — Processing loop, terminal Start/Stop, error handling & logging
-- [ ] Phase 2.4 — Flask web UI (not built yet; the app is terminal-based for now)
+- [x] Phase 2.4 — Flask web UI (Start/Stop buttons, status, current customer, pending count, chat box)
 - [x] Phase 3 — LLM text conversation (Groq gpt-oss-120b, Gemini or local Ollama; structured JSON decision)
 - [ ] Phase 4 — Add Voice Pipeline
 - [ ] Phase 5 — Optional Real Phone Calling
@@ -58,11 +58,19 @@ Set `LLM_PROVIDER` in `.env`:
 # Generate sample spreadsheet with fake data
 python create_sample_data.py
 
-# Run the agent (terminal commands: start, stop, status, reset, quit)
+# Start the web UI
 python main.py
 ```
 
-During `start`, the AI speaks first and you type the customer's replies in the terminal.
+Then open **http://127.0.0.1:5000** in your browser.
+
+- **START AGENT** begins processing `PENDING` customers, top to bottom.
+- The AI speaks first. Type the customer's reply in the chat box and press SEND.
+- **STOP AGENT** prevents any new call from starting. A call that is waiting for a reply is ended and that customer stays `PENDING`.
+- The page shows the agent status, the current customer and the number of pending customers.
+- To get fresh test data, run `python create_sample_data.py` again (not while the agent is running).
+
+The server only listens on `127.0.0.1`. It is not reachable from other machines.
 
 ## How it works
 

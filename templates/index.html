@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Loan Customer Agent</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main class="card">
+    <h1>AI LOAN CUSTOMER AGENT</h1>
+    <p class="sheet">Spreadsheet: <strong>{{ spreadsheet }}</strong></p>
+
+    <div class="buttons">
+      <button id="start-btn" class="btn start" type="button">START AGENT</button>
+      <button id="stop-btn" class="btn stop" type="button" disabled>STOP AGENT</button>
+    </div>
+
+    <dl class="info">
+      <div><dt>Agent Status</dt><dd id="status" class="badge idle">IDLE</dd></div>
+      <div><dt>Current Customer</dt><dd id="customer">-</dd></div>
+      <div><dt>Pending Customers</dt><dd id="pending">-</dd></div>
+    </dl>
+
+    <p id="message" class="message" role="alert" hidden></p>
+
+    <section class="chat" aria-label="Conversation">
+      <h2>Conversation</h2>
+      <div id="transcript" class="transcript" aria-live="polite">
+        <p class="empty">Press START AGENT to begin.</p>
+      </div>
+      <form id="reply-form" class="reply" autocomplete="off">
+        <input id="reply-input" type="text" maxlength="500" placeholder="Type the customer's reply..." disabled>
+        <button id="reply-btn" class="btn send" type="submit" disabled>SEND</button>
+      </form>
+    </section>
+
+    <p id="summary" class="summary"></p>
+  </main>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
